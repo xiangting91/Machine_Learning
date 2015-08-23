@@ -1,0 +1,132 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Xiangting"
+date: "Sunday, August 23, 2015"
+output: html_document
+---
+#Project Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset).
+
+##Data Sets
+The training data for this project are available here: <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here: <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+The data for this project come from this source: <http://groupware.les.inf.puc-rio.br/har>. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+##Project Objective
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+#Analysis
+##Approach
+1. Reproducibility: Launch packages and set seed
+2. Load and explore the data set
+3. Cross-validation: 70% of the original data is used for model building (training data) while the rest of 30% of the data is used for testing (testing data)
+4. Data cleaning: Remove variables which have little predicitive value or information.
+5. Apply PCA to reduce the number f variables
+6. Apply random forest method to build a model
+7. Check the model with the testing data set
+8. Apply the model to estimate classes of 20 observations
+
+###Reproducibility: Launch packages and set seed
+```{r}
+set.seed(1111)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(e1071)
+library(randomForest)
+```
+
+###Load and explore the data set
+```{r}
+data <- read.csv("C:/Users/User1/Documents/GitHub/pml-training.csv", na.strings=c("NA","#DIV/0!", ""))
+colnames(data)
+summary(data)
+```
+
+###Cross-validation : 70% training data, 30% testing data
+```{r}
+train <- createDataPartition(y=data$classe,p=.70,list=F)
+training <- data[train,]
+testing <- data[-train,]
+```
+
+###Data Cleaning
+```{r}
+#Remove variables which have little predicitive value: identifier, timestamp, and window data 
+Cl <- grep("name|timestamp|window|X", colnames(training), value=F) 
+trainingCl <- training[,-Cl]
+
+#Remove variables with over 95% missing data 
+trainingCl[trainingCl==""] <- NA
+NArate <- apply(trainingCl, 2, function(x) sum(is.na(x)))/nrow(trainingCl)
+trainingCl <- trainingCl[!(NArate>0.95)]
+summary(trainingCl)
+```
+
+###Apply PCA to reduce the number f variables
+```{r}
+preProc <- preProcess(trainingCl[,1:52],method="pca",thresh=.8) #12 components are required
+preProc
+
+preProc <- preProcess(trainingCl[,1:52],method="pca",thresh=.9) #18 components are required
+preProc
+
+preProc <- preProcess(trainingCl[,1:52],method="pca",thresh=.95) #25 components are required
+preProc
+
+preProc <- preProcess(trainingCl[,1:52],method="pca",pcaComp=25) #Use 25 components to achieve 95% of variance
+preProc
+
+preProc$rotation
+trainingPC <- predict(preProc,trainingCl[,1:52])
+```
+
+###Apply random forest method to build a model
+```{r}
+modFitRF <- randomForest(trainingCl$classe ~ .,   data=trainingPC, do.trace=F)
+print(modFitRF) # view results 
+importance(modFitRF) # importance of each predictor
+```
+
+###Check the model with the testing data set
+```{r}
+testingCl <- testing[,-Cl]
+testingCl[testingCl==""] <- NA
+NArate <- apply(testingCl, 2, function(x) sum(is.na(x)))/nrow(testingCl)
+testingCl <- testingCl[!(NArate>0.95)]
+testingPC <- predict(preProc,testingCl[,1:52])
+confusionMatrix(testingCl$classe,predict(modFitRF,testingPC))
+```
+
+###Apply the model to estimate classes of 20 observations
+```{r}
+testdata <- read.csv("C:/Users/User1/Documents/GitHub/pml-testing.csv", na.strings=c("NA","#DIV/0!", ""))
+testdataCl <- testdata[,-Cl]
+testdataCl[testdataCl==""] <- NA
+NArate <- apply(testdataCl, 2, function(x) sum(is.na(x)))/nrow(testdataCl)
+testdataCl <- testdataCl[!(NArate>0.95)]
+testdataPC <- predict(preProc,testdataCl[,1:52])
+testdataCl$classe <- predict(modFitRF,testdataPC)
+```
+
+###Write files for submission
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(testdataCl$classe)
+```
+#Conclusion
+
+To analyze and predict correct body movement during the exercise, 19622 observations from weight lifting exercise were collected. These observations are randomly partitioned to 2 sets: 70%  (13737 observations) to build a model by random forest method, and the remaining 30%  (5885 observations) to be used as the testing set for model validation (cross-validation). 
+
+The model statistics showed that the model had the overall accuracy of 97% for the testing set. The sensitivity is 92%-99% and the specificity was over 99% for all classes. 
+
+Limitation of study: The observation data used in the analyses was collected from 6 young health participants in an experiment using Microsoft Kinect. Under the same condition, the model is expected to perform over 95% accuracy. However, under different conditions (e.g. elderly people or different measuring device) e, the model might not perform as well.
